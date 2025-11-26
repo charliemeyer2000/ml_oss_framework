@@ -5,9 +5,9 @@ from typing import Any
 import numpy as np
 import torch
 from PIL import Image
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split  # type: ignore[import-untyped]
 from torch.utils.data import DataLoader, Dataset, Subset
-from torchvision import transforms
+from torchvision import transforms  # type: ignore[import-untyped]
 
 
 class ImageDataset(Dataset[tuple[torch.Tensor, int]]):
@@ -39,10 +39,10 @@ class ImageDataset(Dataset[tuple[torch.Tensor, int]]):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
         img = Image.open(self.paths[idx]).convert("RGB")
         if self.transform:
-            img = self.transform(img)
+            tensor: torch.Tensor = self.transform(img)
         else:
-            img = transforms.ToTensor()(img)
-        return img, self.labels[idx]
+            tensor = transforms.ToTensor()(img)
+        return tensor, self.labels[idx]
 
     @property
     def num_classes(self) -> int:
