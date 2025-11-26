@@ -19,7 +19,8 @@ class DemoCNN(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        result: torch.Tensor = self.net(x)
+        return result
 
 
 def create_model(name: str, num_classes: int = 10, **kwargs: object) -> nn.Module:

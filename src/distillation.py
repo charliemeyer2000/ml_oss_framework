@@ -62,9 +62,9 @@ class DistillationTrainer:
             alpha=alpha,
             class_weights=class_weights.to(device) if class_weights is not None else None,
         )
-        self.scaler = torch.amp.GradScaler("cuda") if self.use_amp else None
+        self.scaler = torch.amp.GradScaler("cuda") if self.use_amp else None  # type: ignore[attr-defined]
 
-    def train_epoch(self, loader: torch.utils.data.DataLoader) -> dict[str, float]:
+    def train_epoch(self, loader: torch.utils.data.DataLoader) -> dict[str, float]:  # type: ignore[type-arg]
         self.student.train()
         total_loss, total_hard, total_soft = 0.0, 0.0, 0.0
         correct, total = 0, 0
@@ -74,7 +74,7 @@ class DistillationTrainer:
 
             with torch.no_grad():
                 if self.use_amp:
-                    with torch.amp.autocast("cuda"):
+                    with torch.amp.autocast("cuda"):  # type: ignore[attr-defined]
                         teacher_logits = self.teacher(images)
                 else:
                     teacher_logits = self.teacher(images)
@@ -82,7 +82,7 @@ class DistillationTrainer:
             self.optimizer.zero_grad(set_to_none=True)
 
             if self.use_amp:
-                with torch.amp.autocast("cuda"):
+                with torch.amp.autocast("cuda"):  # type: ignore[attr-defined]
                     student_logits = self.student(images)
                     loss, ld = self.criterion(student_logits, teacher_logits, labels)
                 assert self.scaler is not None
@@ -113,7 +113,7 @@ class DistillationTrainer:
         }
 
     @torch.no_grad()
-    def validate(self, loader: torch.utils.data.DataLoader) -> dict[str, float]:
+    def validate(self, loader: torch.utils.data.DataLoader) -> dict[str, float]:  # type: ignore[type-arg]
         self.student.eval()
         total_loss, correct, total = 0.0, 0, 0
         all_preds, all_labels = [], []
@@ -122,7 +122,7 @@ class DistillationTrainer:
             images, labels = images.to(self.device), labels.to(self.device)
 
             if self.use_amp:
-                with torch.amp.autocast("cuda"):
+                with torch.amp.autocast("cuda"):  # type: ignore[attr-defined]
                     t_logits = self.teacher(images)
                     s_logits = self.student(images)
                     loss, _ = self.criterion(s_logits, t_logits, labels)
