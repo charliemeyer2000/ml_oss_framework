@@ -168,7 +168,7 @@ outputs/{run_name}/
 └── training_curves.png  # Loss/F1 plots
 ```
 
-Experiment data is also logged to `experiments.db` (sqlite).
+Experiment data is also logged to `experiments.db` (sqlite). This is so that you can have tracking of how models did locally + on the server along with their corresponding config so you can start to see what works/doesn't work!
 
 ## Config Structure
 
