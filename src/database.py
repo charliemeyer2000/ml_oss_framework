@@ -7,23 +7,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-ALLOWED_METRICS = frozenset(
-    {
-        "server_f1_score",
-        "best_val_f1",
-        "best_val_accuracy",
-        "best_val_loss",
-        "training_duration_seconds",
-        "model_size_mb",
-        "num_parameters",
-        "server_rank",
-    }
-)
+from .schema import ALLOWED_SORT_METRICS
 
 
 class ExperimentDatabase:
-    """SQLite database for tracking ML experiments."""
-
     def __init__(self, db_path: str = "experiments.db") -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -39,40 +26,32 @@ class ExperimentDatabase:
                 run_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_name TEXT UNIQUE NOT NULL,
                 timestamp TEXT NOT NULL,
-                -- Model config
                 model_name TEXT,
                 num_classes INTEGER,
                 dropout REAL,
-                -- Training config
                 epochs INTEGER,
                 batch_size INTEGER,
                 learning_rate REAL,
                 weight_decay REAL,
                 scheduler TEXT,
-                -- Data config
                 data_root TEXT,
                 train_split REAL,
                 img_size INTEGER,
-                -- Training results
                 best_epoch INTEGER,
                 best_val_f1 REAL,
                 best_val_accuracy REAL,
                 best_val_loss REAL,
                 training_duration_seconds REAL,
-                -- Model info
                 num_parameters INTEGER,
                 model_size_mb REAL,
                 model_path TEXT,
-                -- Device info
                 device TEXT,
-                -- Server submission
                 server_submission_id INTEGER,
                 server_status TEXT,
                 server_submitted_at TEXT,
                 server_f1_score REAL,
                 server_model_size_mb REAL,
                 server_rank INTEGER,
-                -- Notes
                 notes TEXT
             )
         """)
@@ -179,7 +158,7 @@ class ExperimentDatabase:
                     metrics.get("val_loss"),
                     metrics.get("val_f1"),
                     metrics.get("val_accuracy"),
-                    metrics.get("learning_rate"),
+                    metrics.get("lr") or metrics.get("learning_rate"),
                     datetime.now().isoformat(),
                 ),
             )
@@ -198,19 +177,8 @@ class ExperimentDatabase:
     def get_best_experiments(
         self, metric: str = "server_f1_score", limit: int = 10
     ) -> list[dict[str, Any]]:
-        """Get best experiments sorted by a metric.
-
-        Args:
-            metric: Column to sort by. Must be one of the allowed metrics to prevent SQL injection.
-            limit: Maximum number of results to return.
-
-        Raises:
-            ValueError: If metric is not in the allowed whitelist.
-        """
-        if metric not in ALLOWED_METRICS:
-            raise ValueError(
-                f"Invalid metric '{metric}'. Allowed metrics: {sorted(ALLOWED_METRICS)}"
-            )
+        if metric not in ALLOWED_SORT_METRICS:
+            raise ValueError(f"Invalid metric '{metric}'. Allowed: {sorted(ALLOWED_SORT_METRICS)}")
         cursor = self.conn.cursor()
         cursor.execute(
             f"SELECT * FROM experiments WHERE {metric} IS NOT NULL ORDER BY {metric} DESC LIMIT ?",

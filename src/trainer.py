@@ -9,12 +9,13 @@ from typing import Any, Literal
 
 import torch
 import torch.nn as nn
-from sklearn.metrics import accuracy_score, f1_score
-from torch.amp import GradScaler, autocast
+from sklearn.metrics import accuracy_score, f1_score  # type: ignore[import-untyped]
+from torch.amp import GradScaler, autocast  # type: ignore[attr-defined]
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
 from torch.utils.data import DataLoader
-from tqdm import tqdm
+from tqdm import tqdm  # type: ignore[import-untyped]
 
+from .schema import EpochHistory, create_empty_history, record_epoch
 from .utils import plot_training_curves
 
 logger = logging.getLogger("training")
@@ -99,13 +100,7 @@ class Trainer:
         self.checkpointer = AsyncCheckpointer()
         self.run_dir.mkdir(parents=True, exist_ok=True)
 
-        self.history: dict[str, list[float]] = {
-            "train_loss": [],
-            "val_loss": [],
-            "val_accuracy": [],
-            "val_f1": [],
-            "lr": [],
-        }
+        self.history: EpochHistory = create_empty_history()
         self._interrupted = False
         self._current_epoch = 0
         self._setup_signal_handlers()
@@ -225,10 +220,9 @@ class Trainer:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         if "history" in checkpoint:
             self.history = checkpoint["history"]
-        logger.info(
-            f"Resumed from epoch {checkpoint['epoch']} (F1={checkpoint.get('val_f1', 0):.4f})"
-        )
-        return checkpoint["epoch"] + 1
+        epoch: int = checkpoint["epoch"]
+        logger.info(f"Resumed from epoch {epoch} (F1={checkpoint.get('val_f1', 0):.4f})")
+        return epoch + 1
 
     def fit(
         self,
@@ -261,11 +255,14 @@ class Trainer:
                 val_metrics = self.evaluate(val_loader)
                 current_lr = self.optimizer.param_groups[0]["lr"]
 
-                self.history["train_loss"].append(train_loss)
-                self.history["val_loss"].append(val_metrics["val_loss"])
-                self.history["val_accuracy"].append(val_metrics["val_accuracy"])
-                self.history["val_f1"].append(val_metrics["val_f1"])
-                self.history["lr"].append(current_lr)
+                record_epoch(
+                    self.history,
+                    train_loss=train_loss,
+                    val_loss=val_metrics["val_loss"],
+                    val_f1=val_metrics["val_f1"],
+                    val_accuracy=val_metrics["val_accuracy"],
+                    lr=current_lr,
+                )
 
                 logger.info(
                     f"Epoch {epoch}/{num_epochs} - Loss: {train_loss:.4f}, Val F1: {val_metrics['val_f1']:.4f}, LR: {current_lr:.6f}"

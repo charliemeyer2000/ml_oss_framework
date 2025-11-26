@@ -1,10 +1,13 @@
 import logging
 import random
 from pathlib import Path
+from typing import cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+
+from .schema import GRAPHABLE_METRICS, EpochHistory
 
 
 def set_seed(seed: int = 42, deterministic: bool = True) -> None:
@@ -45,22 +48,50 @@ def setup_logging(run_dir: Path, name: str = "training") -> logging.Logger:
     return logger
 
 
-def plot_training_curves(history: dict[str, list[float]], save_dir: Path) -> None:
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-    epochs = range(1, len(history["train_loss"]) + 1)
+def plot_training_curves(history: EpochHistory, save_dir: Path) -> None:
+    """Plot training curves for metrics in GRAPHABLE_METRICS."""
+    hist = cast(dict[str, list[float]], history)
 
-    axes[0].plot(epochs, history["train_loss"], "b-", label="Train")
-    axes[0].plot(epochs, history["val_loss"], "r-", label="Val")
-    axes[0].set_xlabel("Epoch")
-    axes[0].set_ylabel("Loss")
-    axes[0].legend()
-    axes[0].grid(True, alpha=0.3)
+    available_metrics = [m for m in GRAPHABLE_METRICS if m in hist and hist[m]]
 
-    axes[1].plot(epochs, history["val_f1"], "g-", label="F1")
-    axes[1].set_xlabel("Epoch")
-    axes[1].set_ylabel("F1")
-    axes[1].legend()
-    axes[1].grid(True, alpha=0.3)
+    if not available_metrics:
+        return
+
+    first_metric = available_metrics[0]
+    epochs = range(1, len(hist[first_metric]) + 1)
+
+    loss_metrics = [m for m in available_metrics if "loss" in m]
+    other_metrics = [m for m in available_metrics if "loss" not in m]
+
+    num_plots = (1 if loss_metrics else 0) + len(other_metrics)
+    if num_plots == 0:
+        return
+
+    fig, axes = plt.subplots(1, num_plots, figsize=(6 * num_plots, 4))
+    if num_plots == 1:
+        axes = [axes]
+
+    plot_idx = 0
+    colors = ["b", "r", "g", "orange", "purple"]
+
+    if loss_metrics:
+        for i, metric in enumerate(loss_metrics):
+            label = metric.replace("_", " ").title()
+            axes[plot_idx].plot(epochs, hist[metric], f"{colors[i % len(colors)]}-", label=label)
+        axes[plot_idx].set_xlabel("Epoch")
+        axes[plot_idx].set_ylabel("Loss")
+        axes[plot_idx].legend()
+        axes[plot_idx].grid(True, alpha=0.3)
+        plot_idx += 1
+
+    for metric in other_metrics:
+        label = metric.replace("_", " ").title()
+        axes[plot_idx].plot(epochs, hist[metric], "g-", label=label)
+        axes[plot_idx].set_xlabel("Epoch")
+        axes[plot_idx].set_ylabel(label)
+        axes[plot_idx].legend()
+        axes[plot_idx].grid(True, alpha=0.3)
+        plot_idx += 1
 
     plt.tight_layout()
     plt.savefig(save_dir / "training_curves.png", dpi=150)
