@@ -1,0 +1,33 @@
+defaults:
+  - model: demo_cnn
+  - training: default
+  - distillation: default
+  - _self_
+
+run_name: distill_${model.name}_${now:%Y%m%d_%H%M%S}
+
+data:
+  root: data/training_dataset
+  train_split: 0.9
+  batch_size: 32
+  num_workers: 4
+  pin_memory: true
+  seed: 42
+  img_size: 224
+
+paths:
+  output_dir: outputs
+
+teacher:
+  checkpoint: null
+  hf_model: null  # e.g. "google/medsiglip-448"
+
+# Set your HuggingFace token here or via HF_TOKEN env var
+hf_token: null
+
+server:
+  token: YOUR_TOKEN_HERE
+  username: YOUR_USERNAME
+  url: http://hadi.cs.virginia.edu:8000
+  leaderboard_path: /leaderboard3
+  timeout: 1800

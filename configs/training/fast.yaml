@@ -1,0 +1,11 @@
+epochs: 5
+lr: 0.001
+weight_decay: 0.0001
+scheduler: cosine
+early_stopping_patience: 3
+grad_clip: 1.0
+use_amp: true
+use_compile: false
+gradient_accumulation_steps: 1
+use_class_weights: false
+resume_from: null
