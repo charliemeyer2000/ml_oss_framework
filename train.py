@@ -76,7 +76,7 @@ def main(cfg: DictConfig) -> None:
 
     if config.training.use_compile and hasattr(torch, "compile"):
         logger.info("Compiling model...")
-        model = torch.compile(model)
+        model = torch.compile(model)  # type: ignore[assignment]
 
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=config.training.lr, weight_decay=config.training.weight_decay
@@ -116,7 +116,7 @@ def main(cfg: DictConfig) -> None:
         model.load_state_dict(torch.load(best_path, weights_only=False)["model_state_dict"])
 
     model_path = run_dir / "model.pt"
-    torch.jit.script(model).save(str(model_path))
+    torch.jit.script(model).save(str(model_path))  # type: ignore[no-untyped-call]
     size_mb = model_path.stat().st_size / (1024**2)
 
     logger.info("=" * 50)
