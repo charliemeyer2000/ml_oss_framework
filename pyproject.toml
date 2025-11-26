@@ -1,7 +1,7 @@
 [project]
 name = "ml-oss-framework"
 version = "0.1.0"
-description = "A clean PyTorch training framework with Hydra configs, AMP, and async checkpointing"
+description = "ML CS Framework for Hadi's projects/server"
 requires-python = ">=3.11"
 dependencies = [
     "torch>=2.0.0",
