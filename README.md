@@ -37,6 +37,8 @@ unzip training_dataset.zip -d data/
 
 **IMPORTANT**: Update `configs/config.yaml` with your server token and username
 
+anything interfacing with the server (server_cli.py, checking leaderboard, submitting, etc) only works while you're on the UVA VPN/on OOD/any device on UVA eduroam.
+
 ## Training
 
 ### Basic Training
