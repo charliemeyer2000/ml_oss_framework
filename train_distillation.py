@@ -16,6 +16,7 @@ from typing import Any, cast
 import hydra
 import torch
 from omegaconf import DictConfig, OmegaConf
+from transformers import AutoModel
 
 from src.config import Config
 from src.data import create_dataloaders
@@ -74,26 +75,34 @@ def setup_hf_auth(token: str | None) -> None:
         sys.exit(1)
 
 
-def load_hf_teacher(model_name: str, device: torch.device) -> torch.nn.Module:
-    """Load teacher model from HuggingFace."""
+def load_hf_teacher(model_name: str, device: torch.device, num_classes: int) -> torch.nn.Module:
+    """Load MedSigLIP from HuggingFace and add classifier head."""
     print(f"Loading teacher from HuggingFace: {model_name}")
+    teacher = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+    teacher = teacher.to(device)
+    teacher.eval()
+    for p in teacher.parameters():
+        p.requires_grad = False
 
-    try:
-        from transformers import AutoModel
+    with torch.no_grad():
+        sample = torch.randn(1, 3, 448, 448).to(device)
+        hidden_dim = teacher.vision_model(sample).pooler_output.shape[1]
+    teacher.classifier_head = torch.nn.Linear(hidden_dim, num_classes).to(device)
+    print(f"  Classifier head: {hidden_dim} -> {num_classes}")
 
-        teacher = AutoModel.from_pretrained(model_name, trust_remote_code=True)
-        teacher = teacher.to(device)
-        teacher.eval()
-        for p in teacher.parameters():
-            p.requires_grad = False
-        return teacher
-    except Exception as e:
-        print(f"\n❌ Failed to load HuggingFace model: {e}")
-        print("\nMake sure you have:")
-        print("1. A valid HuggingFace token with access to the model")
-        print("2. Accepted the model's terms of use on HuggingFace")
-        print(f"3. The model exists: https://huggingface.co/{model_name}")
-        sys.exit(1)
+    class Wrapper(torch.nn.Module):
+        def __init__(self, model):
+            super().__init__()
+            self.model = model
+
+        def forward(self, x):
+            x = torch.nn.functional.interpolate(
+                x, size=(448, 448), mode="bilinear", align_corners=False
+            )
+            features = self.model.vision_model(x).pooler_output
+            return self.model.classifier_head(features)
+
+    return Wrapper(teacher).to(device)
 
 
 def load_local_teacher(path: str, device: torch.device) -> torch.nn.Module:
@@ -127,6 +136,20 @@ def main(cfg: DictConfig) -> None:
     device = get_device()
     logger.info(f"Device: {device}")
 
+    train_loader, val_loader, data_info = create_dataloaders(
+        data_root=config.data.root,
+        batch_size=config.data.batch_size,
+        train_split=config.data.train_split,
+        num_workers=config.data.num_workers,
+        pin_memory=config.data.pin_memory,
+        seed=config.data.seed,
+        img_size=config.data.img_size,
+    )
+    logger.info(
+        f"Train: {data_info['train_size']}, Val: {data_info['val_size']}, Classes: {data_info['num_classes']}"
+    )
+    num_classes = cast(int, data_info["num_classes"])
+
     # Load teacher - either from HF or local checkpoint
     hf_model = cfg.get("teacher", {}).get("hf_model")
     local_checkpoint = cfg.get("teacher", {}).get("checkpoint")
@@ -134,7 +157,7 @@ def main(cfg: DictConfig) -> None:
 
     if hf_model:
         setup_hf_auth(hf_token)
-        teacher = load_hf_teacher(hf_model, device)
+        teacher = load_hf_teacher(hf_model, device, num_classes=num_classes)
     elif local_checkpoint:
         teacher = load_local_teacher(local_checkpoint, device)
     else:
@@ -152,21 +175,6 @@ def main(cfg: DictConfig) -> None:
     teacher = teacher.to(device)
     logger.info(f"Teacher loaded: {sum(p.numel() for p in teacher.parameters()):,} params")
 
-    # Load data
-    train_loader, val_loader, data_info = create_dataloaders(
-        data_root=config.data.root,
-        batch_size=config.data.batch_size,
-        train_split=config.data.train_split,
-        num_workers=config.data.num_workers,
-        pin_memory=config.data.pin_memory,
-        seed=config.data.seed,
-        img_size=config.data.img_size,
-    )
-    logger.info(
-        f"Train: {data_info['train_size']}, Val: {data_info['val_size']}, Classes: {data_info['num_classes']}"
-    )
-
-    num_classes = cast(int, data_info["num_classes"])
     student = create_model(config.model.name, num_classes=num_classes).to(device)
     logger.info(
         f"Student: {config.model.name}, {count_parameters(student):,} params, {get_model_size_mb(student):.2f} MB"
