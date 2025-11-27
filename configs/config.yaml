@@ -6,7 +6,7 @@ defaults:
 run_name: ${model.name}_${now:%Y%m%d_%H%M%S}
 
 data:
-  root: data/training_dataset
+  root: data/train_dataset
   train_split: 0.9
   batch_size: 32
   num_workers: 4
