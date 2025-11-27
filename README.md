@@ -35,7 +35,7 @@ mkdir -p data
 unzip training_dataset.zip -d data/
 ```
 
-**IMPORTANT**: Update `configs/config.yaml` with your server token and username
+**IMPORTANT**: Update `configs/server/default.yaml` with your server token, username, and HF token
 
 anything interfacing with the server (server_cli.py, checking leaderboard, submitting, etc) only works while you're on the UVA VPN/on OOD/any device on UVA eduroam.
 
@@ -81,8 +81,8 @@ uv run train_distillation.py teacher.checkpoint=teacher.pt
 
 Set your HF token via one of these methods:
 
-1. **In config** (recommended): Set `hf_token` in `configs/config_distillation.yaml`
-2. **CLI override**: `hf_token=YOUR_TOKEN`
+1. **In config** (recommended): Set `hf_token` in `configs/server/default.yaml`
+2. **CLI override**: `server.hf_token=YOUR_TOKEN`
 3. **env var**: `export HF_TOKEN=YOUR_TOKEN`
 4. **HF cli**: `uv run huggingface-cli login`
 
@@ -91,7 +91,7 @@ Set your HF token via one of these methods:
 uv run train_distillation.py teacher.hf_model=google/medsiglip-448
 
 # or pass token directly:
-uv run train_distillation.py teacher.hf_model=google/medsiglip-448 hf_token=YOUR_TOKEN
+uv run train_distillation.py teacher.hf_model=google/medsiglip-448 server.hf_token=YOUR_TOKEN
 ```
 
 Get your HF token at: https://huggingface.co/settings/tokens
@@ -108,7 +108,7 @@ uv run train_distillation.py teacher.checkpoint=t.pt distillation.temperature=6 
 
 ## Server CLI
 
-If you configured `server.token` and `server.username` in `configs/config.yaml`, you don't need to pass them on the command line.
+If you configured `server.token` and `server.username` in `configs/server/default.yaml`, you don't need to pass them on the command line.
 
 ```bash
 # submit a model
@@ -174,8 +174,10 @@ Experiment data is also logged to `experiments.db` (sqlite). This is so that you
 
 ```
 configs/
-├── config.yaml (for train.py)
-├── config_distillation.yaml (for train_distillation.py)
+├── config.yaml              # for train.py
+├── config_distillation.yaml # for train_distillation.py
+├── server/
+│   └── default.yaml         # token, username, hf_token (shared)
 ├── model/
 │   └── demo_cnn.yaml
 ├── training/

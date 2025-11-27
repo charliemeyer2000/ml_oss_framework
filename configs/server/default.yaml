@@ -1,0 +1,8 @@
+token: YOUR_TOKEN_HERE
+username: YOUR_USERNAME
+url: http://hadi.cs.virginia.edu:8000
+leaderboard_path: /leaderboard3
+timeout: 1800
+
+# HuggingFace token (or set HF_TOKEN env var)
+hf_token: null

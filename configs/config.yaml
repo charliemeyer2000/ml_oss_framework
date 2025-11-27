@@ -1,6 +1,7 @@
 defaults:
   - model: demo_cnn
   - training: default
+  - server: default
   - _self_
 
 run_name: ${model.name}_${now:%Y%m%d_%H%M%S}
@@ -16,10 +17,3 @@ data:
 
 paths:
   output_dir: outputs
-
-server:
-  token: YOUR_TOKEN_HERE
-  username: YOUR_USERNAME
-  url: http://hadi.cs.virginia.edu:8000
-  leaderboard_path: /leaderboard3
-  timeout: 1800
