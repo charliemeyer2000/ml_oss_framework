@@ -7,7 +7,7 @@ defaults:
 run_name: distill_${model.name}_${now:%Y%m%d_%H%M%S}
 
 data:
-  root: data/training_dataset
+  root: data/train_dataset
   train_split: 0.9
   batch_size: 32
   num_workers: 4
@@ -20,7 +20,7 @@ paths:
 
 teacher:
   checkpoint: null
-  hf_model: null  # e.g. "google/medsiglip-448"
+  hf_model: google/medsiglip-448
 
 # Set your HuggingFace token here or via HF_TOKEN env var
 hf_token: null
