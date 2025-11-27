@@ -9,16 +9,21 @@ from typing import Any, Literal
 
 import torch
 import torch.nn as nn
-from sklearn.metrics import accuracy_score, f1_score  # type: ignore[import-untyped]
+from sklearn.metrics import accuracy_score, f1_score
 from torch.amp import GradScaler, autocast  # type: ignore[attr-defined]
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
 from torch.utils.data import DataLoader
-from tqdm import tqdm  # type: ignore[import-untyped]
+from tqdm import tqdm
 
 from .schema import EpochHistory, create_empty_history, record_epoch
 from .utils import plot_training_curves
 
 logger = logging.getLogger("training")
+
+
+def _get_unwrapped_model(model: nn.Module) -> nn.Module:
+    """Get the original model from a potentially torch.compile'd model."""
+    return getattr(model, "_orig_mod", model)
 
 
 class AsyncCheckpointer:
@@ -115,9 +120,10 @@ class Trainer:
         signal.signal(signal.SIGINT, handler)
 
     def _save_emergency_checkpoint(self) -> None:
+        unwrapped = _get_unwrapped_model(self.model)
         checkpoint = {
             "epoch": self._current_epoch,
-            "model_state_dict": self.model.state_dict(),
+            "model_state_dict": unwrapped.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "history": self.history,
             "interrupted": True,
@@ -199,9 +205,10 @@ class Trainer:
         }
 
     def _save_checkpoint(self, epoch: int, val_f1: float, is_best: bool) -> None:
+        unwrapped = _get_unwrapped_model(self.model)
         checkpoint = {
             "epoch": epoch,
-            "model_state_dict": self.model.state_dict(),
+            "model_state_dict": unwrapped.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "scheduler_state_dict": self.scheduler.state_dict(),
             "val_f1": val_f1,
@@ -214,7 +221,8 @@ class Trainer:
     def load_checkpoint(self, path: Path | str) -> int:
         logger.info(f"Loading checkpoint from {path}")
         checkpoint = torch.load(path, weights_only=False, map_location=self.device)
-        self.model.load_state_dict(checkpoint["model_state_dict"])
+        unwrapped = _get_unwrapped_model(self.model)
+        unwrapped.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         if "scheduler_state_dict" in checkpoint:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
@@ -298,9 +306,9 @@ class Trainer:
 
         best_path = self.run_dir / "best_model.pth"
         if best_path.exists():
-            self.model.load_state_dict(
-                torch.load(best_path, weights_only=False)["model_state_dict"]
-            )
+            # Load into unwrapped model to handle torch.compile
+            unwrapped = _get_unwrapped_model(self.model)
+            unwrapped.load_state_dict(torch.load(best_path, weights_only=False)["model_state_dict"])
 
         return {
             "best_epoch": best_epoch,

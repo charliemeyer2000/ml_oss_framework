@@ -2,10 +2,10 @@
 
 Usage:
     # With a local teacher checkpoint:
-    uv run python train_distillation.py teacher.checkpoint=path/to/teacher.pt
+    uv run train_distillation.py teacher.checkpoint=path/to/teacher.pt
 
     # With a HuggingFace model (requires HF token):
-    uv run python train_distillation.py teacher.hf_model=google/medsiglip-448 server.hf_token=YOUR_TOKEN
+    uv run train_distillation.py teacher.hf_model=google/medsiglip-448 server.hf_token=YOUR_TOKEN
 """
 
 import os
@@ -16,14 +16,13 @@ from typing import Any, cast
 import hydra
 import torch
 from omegaconf import DictConfig, OmegaConf
-from transformers import AutoModel
 
 from src.config import Config
 from src.data import create_dataloaders
 from src.distillation import DistillationTrainer
 from src.model import count_parameters, create_model, get_model_size_mb
 from src.trainer import create_scheduler
-from src.utils import get_device, plot_training_curves, set_seed, setup_logging
+from src.utils import get_device, set_seed, setup_logging
 
 
 def parse_args() -> None:
@@ -45,7 +44,6 @@ def parse_args() -> None:
 
 def setup_hf_auth(token: str | None) -> None:
     """Setup HuggingFace authentication."""
-    # Check env var first
     env_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
     final_token = token or env_token
 
@@ -76,7 +74,9 @@ def setup_hf_auth(token: str | None) -> None:
 
 
 def load_hf_teacher(model_name: str, device: torch.device, num_classes: int) -> torch.nn.Module:
-    """Load MedSigLIP from HuggingFace and add classifier head."""
+    """Load model from HuggingFace and add classifier head."""
+    from transformers import AutoModel
+
     print(f"Loading teacher from HuggingFace: {model_name}")
     teacher = AutoModel.from_pretrained(model_name, trust_remote_code=True)
     teacher = teacher.to(device)
@@ -91,18 +91,20 @@ def load_hf_teacher(model_name: str, device: torch.device, num_classes: int) -> 
     print(f"  Classifier head: {hidden_dim} -> {num_classes}")
 
     class Wrapper(torch.nn.Module):
-        def __init__(self, model):
+        def __init__(self, model: Any) -> None:
             super().__init__()
             self.model = model
 
-        def forward(self, x):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
             x = torch.nn.functional.interpolate(
                 x, size=(448, 448), mode="bilinear", align_corners=False
             )
             features = self.model.vision_model(x).pooler_output
-            return self.model.classifier_head(features)
+            out: torch.Tensor = self.model.classifier_head(features)
+            return out
 
-    return Wrapper(teacher).to(device)
+    wrapper: torch.nn.Module = Wrapper(teacher).to(device)
+    return wrapper
 
 
 def load_local_teacher(path: str, device: torch.device) -> torch.nn.Module:
@@ -113,7 +115,7 @@ def load_local_teacher(path: str, device: torch.device) -> torch.nn.Module:
         sys.exit(1)
 
     print(f"Loading teacher from: {path}")
-    teacher = torch.jit.load(str(p), map_location=device)
+    teacher: torch.nn.Module = torch.jit.load(str(p), map_location=device)  # type: ignore[no-untyped-call]
     teacher.eval()
     for param in teacher.parameters():
         param.requires_grad = False
@@ -175,10 +177,17 @@ def main(cfg: DictConfig) -> None:
     teacher = teacher.to(device)
     logger.info(f"Teacher loaded: {sum(p.numel() for p in teacher.parameters()):,} params")
 
+    # Create student model
     student = create_model(config.model.name, num_classes=num_classes).to(device)
     logger.info(
         f"Student: {config.model.name}, {count_parameters(student):,} params, {get_model_size_mb(student):.2f} MB"
     )
+
+    # Apply torch.compile() if enabled
+    original_student = student
+    if config.training.use_compile and hasattr(torch, "compile"):
+        logger.info("Compiling student model...")
+        student = torch.compile(student)  # type: ignore[assignment]
 
     assert config.distillation is not None
     logger.info(f"Distillation: T={config.distillation.temperature}, α={config.distillation.alpha}")
@@ -196,64 +205,41 @@ def main(cfg: DictConfig) -> None:
         student=student,
         teacher=teacher,
         optimizer=optimizer,
+        scheduler=scheduler,
         device=device,
+        run_dir=run_dir,
         temperature=config.distillation.temperature,
         alpha=config.distillation.alpha,
         use_amp=config.training.use_amp,
         grad_clip=config.training.grad_clip,
+        early_stopping_patience=config.training.early_stopping_patience,
+        gradient_accumulation_steps=config.training.gradient_accumulation_steps,
         class_weights=class_weights,
     )
 
-    best_f1, best_epoch = 0.0, 0
-    history: dict[str, list[float]] = {
-        "train_loss": [],
-        "val_loss": [],
-        "val_f1": [],
-        "val_accuracy": [],
-    }
+    start_epoch = 1
+    if config.training.resume_from:
+        resume_path = Path(config.training.resume_from)
+        if resume_path.exists():
+            start_epoch = trainer.load_checkpoint(resume_path)
 
-    for epoch in range(1, config.training.epochs + 1):
-        train_m = trainer.train_epoch(train_loader)
-        val_m = trainer.validate(val_loader)
-        if scheduler:
-            scheduler.step()
+    # Train!
+    result = trainer.fit(train_loader, val_loader, config.training.epochs, start_epoch)
 
-        history["train_loss"].append(train_m["loss"])
-        history["val_loss"].append(val_m["loss"])
-        history["val_f1"].append(val_m["f1"])
-        history["val_accuracy"].append(val_m["acc"])
-
-        logger.info(
-            f"Epoch {epoch}/{config.training.epochs} | "
-            f"Loss: {train_m['loss']:.4f} (hard={train_m['hard']:.4f}, soft={train_m['soft']:.4f}) | "
-            f"Val F1: {val_m['f1']:.4f}"
+    original_student.eval()
+    original_student.cpu()
+    best_path = run_dir / "best_model.pth"
+    if best_path.exists():
+        original_student.load_state_dict(
+            torch.load(best_path, weights_only=False)["model_state_dict"]
         )
 
-        if val_m["f1"] > best_f1:
-            best_f1, best_epoch = val_m["f1"], epoch
-            torch.save(
-                {"epoch": epoch, "model_state_dict": student.state_dict(), "f1": best_f1},
-                run_dir / "best_model.pth",
-            )
-            logger.info(f"  -> Best! F1={best_f1:.4f}")
-
-        if epoch - best_epoch >= config.training.early_stopping_patience:
-            logger.info(f"Early stop at epoch {epoch}")
-            break
-
-    plot_training_curves(history, run_dir)
-
-    student.eval()
-    student.cpu()
-    ckpt = torch.load(run_dir / "best_model.pth", weights_only=False)
-    student.load_state_dict(ckpt["model_state_dict"])
-
     model_path = run_dir / "model.pt"
-    torch.jit.script(student).save(str(model_path))
+    torch.jit.script(original_student).save(str(model_path))  # type: ignore[no-untyped-call]
     size_mb = model_path.stat().st_size / (1024**2)
 
     logger.info("=" * 50)
-    logger.info(f"Done! Best F1: {best_f1:.4f} @ epoch {best_epoch}")
+    logger.info(f"Done! Best F1: {result['best_f1']:.4f} @ epoch {result['best_epoch']}")
     logger.info(f"Model: {model_path} ({size_mb:.2f} MB)")
     logger.info("=" * 50)
 
