@@ -5,7 +5,7 @@ Usage:
     uv run python train_distillation.py teacher.checkpoint=path/to/teacher.pt
 
     # With a HuggingFace model (requires HF token):
-    uv run python train_distillation.py teacher.hf_model=google/medsiglip-448 hf_token=YOUR_TOKEN
+    uv run python train_distillation.py teacher.hf_model=google/medsiglip-448 server.hf_token=YOUR_TOKEN
 """
 
 import os
@@ -54,8 +54,8 @@ def setup_hf_auth(token: str | None) -> None:
         print("ERROR: HuggingFace token required for downloading teacher model!")
         print("=" * 60)
         print("\nTo fix this, do ONE of the following:\n")
-        print("1. Set hf_token in config:")
-        print("   uv run python train_distillation.py hf_token=YOUR_TOKEN ...\n")
+        print("1. Set hf_token in configs/server/default.yaml")
+        print("   Or override: server.hf_token=YOUR_TOKEN\n")
         print("2. Set HF_TOKEN environment variable:")
         print("   export HF_TOKEN=YOUR_TOKEN\n")
         print("3. Login via CLI:")
@@ -153,7 +153,7 @@ def main(cfg: DictConfig) -> None:
     # Load teacher - either from HF or local checkpoint
     hf_model = cfg.get("teacher", {}).get("hf_model")
     local_checkpoint = cfg.get("teacher", {}).get("checkpoint")
-    hf_token = cfg.get("hf_token")
+    hf_token = cfg.get("server", {}).get("hf_token")
 
     if hf_model:
         setup_hf_auth(hf_token)
@@ -168,7 +168,7 @@ def main(cfg: DictConfig) -> None:
         print("1. Local TorchScript checkpoint:")
         print("   teacher.checkpoint=path/to/teacher.pt\n")
         print("2. HuggingFace model (requires hf_token):")
-        print("   teacher.hf_model=google/medsiglip-448 hf_token=YOUR_TOKEN")
+        print("   teacher.hf_model=google/medsiglip-448 server.hf_token=YOUR_TOKEN")
         print("=" * 60 + "\n")
         sys.exit(1)
 
