@@ -5,9 +5,9 @@ from typing import Any
 import numpy as np
 import torch
 from PIL import Image
-from sklearn.model_selection import train_test_split  # type: ignore[import-untyped]
+from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset, Subset
-from torchvision import transforms  # type: ignore[import-untyped]
+from torchvision import transforms
 
 
 class ImageDataset(Dataset[tuple[torch.Tensor, int]]):
